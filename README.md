@@ -27,10 +27,34 @@ controller-managed database.
 
 1. Build and publish the API image and prepare SSH access to the API, workload,
    and database hosts. Hosts need Docker and Compose; workload hosts must be
-   able to pull their images.
-2. Create `src/api/compose/.env` with a persistent, 64-hex-character
-   `DB_ENCRYPTION_KEY`. Keep the key and SQLite data safe. Review the NFS backup
-   volume settings in `src/api/compose/docker-compose.yml` for your environment.
+   able to pull their images. The commissioning scripts expect SSH aliases that
+   connect to a user with sudo access. Create an SSH key pair at
+   `~/.ssh/lab_controller` and `~/.ssh/lab_controller.pub` if needed:
+
+   ```sh
+   ssh-keygen -t ed25519 -f ~/.ssh/lab_controller
+   ```
+
+2. Create the local API Compose configuration from the tracked example:
+
+   ```sh
+   cp src/api/compose/docker-compose.yml.example src/api/compose/docker-compose.yml
+   ```
+
+   Set the image in that file to your published image if needed. Create
+   `src/api/compose/.env` with the following values, replacing the examples:
+
+   ```dotenv
+   DB_ENCRYPTION_KEY=<64-hex-character-key>
+   BACKUP_NFS_SERVER=192.0.2.10
+   BACKUP_NFS_EXPORT=/exports/backups
+   ```
+
+   Generate a key with `openssl rand -hex 32`. Keep the key and SQLite data
+   safe: the same key is required to recover stored credentials. Configure an
+   NFS export accessible to the API host and writable by the container. Compose
+   reads the NFS values from `.env` when it starts on the API host. The local
+   Compose file and `.env` are ignored by Git.
 3. Run the appropriate commissioning scripts from your local machine, using SSH
    aliases for the hosts:
 
@@ -57,7 +81,15 @@ controller-managed database.
        postgres_port: 5432
    ```
 
-5. Start the API Compose stack on its host, then check `/health` and `/nodes`.
+5. Start the API Compose stack on its host as `controller`, then check `/health` and `/nodes`:
+
+   ```sh
+   cd ~/stacks/api
+   docker compose up -d
+   curl http://localhost:8080/health
+   curl http://localhost:8080/nodes
+   ```
+
    Use the [example project](docs/example_project/README.md) to configure a
    deployment and GitHub Actions workflow.
 
@@ -86,6 +118,6 @@ cd ../tui && go test ./...
 ```
 
 The [API guide](src/api/README.md) documents endpoints, deployment requests,
-backup schedules, and storage. The repository also contains [HTTP request examples](src/http/),
+backup schedules, and storage. The ignored `src/http/` directory can hold local HTTP requests. The repository also contains
 `scripts/` for host commissioning, `src/api/compose/` for the API
 host stack, and `src/dbserver/` for the PostgreSQL host stack.

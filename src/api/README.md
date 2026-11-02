@@ -10,7 +10,7 @@ The API reads `/app/config/nodes.yaml`, reconciles configured hosts into `/app/d
 
 `POST /deploy` accepts `multipart/form-data` with `forearm` and `compose` file parts for stack deployments. The `env` JSON file part is optional and defaults to an empty environment. Send GitHub secrets and programmatically generated values, including image references, in the optional `secrets` JSON part; it overrides matching values in `env`. Use `env` only for user-defined settings. Values in both parts may be strings, numbers, or booleans; numbers and booleans are converted to strings. Multiline strings are supported. Both parts are written to the stack `.env` on the host, so the secrets part is not separate storage. Database-only deployments can still send the `.forearm` JSON directly. The API validates stack nodes as workload hosts and database nodes as database hosts. The stack job writes `docker-compose.yml` and the merged `.env` under `~/stacks/<name>`, then starts the Compose project and waits for readiness. If deployment fails, it attempts to restore the previous configuration and stack. `GET /stacks` lists recorded stacks; `GET /stacks/{id}` retrieves a record, live Compose container status over SSH, and databases associated in the `.forearm` deployment. A valid request returns HTTP 201 and a list of stack and database jobs; use `GET /jobs` or `GET /jobs/{id}` to check their results. A restart marks unfinished jobs as failed.
 
-Each database requires `name`, `user`, and `node`. Names and users must be lowercase PostgreSQL identifiers containing letters, digits, and underscores, start with a letter or underscore, and be at most 63 characters. Optional `backup_schedule` settings configure `frequency` (`hourly`, `daily`, or `weekly`), `time` (`HH:MM` in Australia/Brisbane for daily and weekly), and `keep_last` (a positive count). Hourly backups run at the top of the hour and ignore `time`. Weekly schedules run on Monday by default; an optional lowercase `day` selects another weekday. Each redeployment replaces the schedule; omitting it disables future backups for that database. The scheduler makes one backup when a scheduled time was missed while the API was stopped, then resumes the regular schedule. Existing databases are left unchanged. New database user passwords are generated and stored encrypted in SQLite. An existing PostgreSQL user without a stored credential causes the job to fail rather than altering that user. `GET /databases` lists database records without passwords. `GET /databases/{id}` returns a database’s details, including the decrypted user password and PostgreSQL connection URI. `POST /databases/{id}/backups` starts an immediate backup and returns HTTP 202 with its backup and job IDs. Only databases successfully created and recorded by the API are listed; an existing database left unchanged is not imported. The sample request and document are in [src/http](../http/).
+Each database requires `name`, `user`, and `node`. Names and users must be lowercase PostgreSQL identifiers containing letters, digits, and underscores, start with a letter or underscore, and be at most 63 characters. Optional `backup_schedule` settings configure `frequency` (`hourly`, `daily`, or `weekly`), `time` (`HH:MM` in Australia/Brisbane for daily and weekly), and `keep_last` (a positive count). Hourly backups run at the top of the hour and ignore `time`. Weekly schedules run on Monday by default; an optional lowercase `day` selects another weekday. Each redeployment replaces the schedule; omitting it disables future backups for that database. The scheduler makes one backup when a scheduled time was missed while the API was stopped, then resumes the regular schedule. Existing databases are left unchanged. New database user passwords are generated and stored encrypted in SQLite. An existing PostgreSQL user without a stored credential causes the job to fail rather than altering that user. `GET /databases` lists database records without passwords. `GET /databases/{id}` returns a database’s details, including the decrypted user password and PostgreSQL connection URI. `POST /databases/{id}/backups` starts an immediate backup and returns HTTP 202 with its backup and job IDs. Only databases successfully created and recorded by the API are listed; an existing database left unchanged is not imported. See the [example project](../../docs/example_project/README.md) for deployment files.
 
 Build and run locally (Go 1.24 or later):
 
@@ -28,14 +28,7 @@ docker build -t ghcr.io/janssen-host/lab-controller:latest src/api
 
 The API host Compose configuration expects `nodes.yaml` in `~controller/stacks/api`. Provide that file separately; it is not installed by the commissioning script. The published GHCR image must be built and pushed before the API host can pull it.
 
-To send the example files with curl from the repository root:
-
-```sh
-curl -X POST http://10.10.10.2:8080/deploy \
-  -F 'forearm=@src/http/test.forearm;type=application/json' \
-  -F 'compose=@src/http/docker-compose.yml;type=application/yaml' \
-  -F 'env=@src/http/env.json;type=application/json'
-```
+See the [example project](../../docs/example_project/README.md) for deployment files and a workflow. Local request files can be kept in the ignored `src/http/` directory.
 
 ## Stream container logs
 
@@ -49,7 +42,7 @@ websocat 'ws://10.10.10.2:8080/stacks/<stack-id>/logs?container=<container-name>
 
 ## Database backup storage
 
-The API runs PostgreSQL `pg_dump` over SSH and streams custom-format dumps directly to `/app/backups`. The API Compose volume mounts the `DB_Backups` NFS export from `10.10.1.7` using NFS version 3 at `/app/backups`. The Docker host must be allowed by the NFS export and the API container must have permission to write it.
+The API runs PostgreSQL `pg_dump` over SSH and streams custom-format dumps directly to `/app/backups`. The API Compose example mounts the NFS export specified by `BACKUP_NFS_SERVER` and `BACKUP_NFS_EXPORT` using NFS version 3 at `/app/backups`. The Docker host must be allowed by the NFS export and the API container must have permission to write it.
 
 Backups and their job statuses appear in `GET /databases/{id}` and `/jobs`. The `path` is relative to the NFS volume root. After each successful backup the scheduler deletes older successful backups beyond `keep_last`; failed runs do not delete good backups. Dumps contain database data, schema, ownership, and privileges, but PostgreSQL global roles are not included and must be available for restoration. Backup dumps are not encrypted by the API.
 
