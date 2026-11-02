@@ -1,0 +1,58 @@
+name: Build and publish API image
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'src/api/**.go'
+      - 'src/api/internal/controller/web/**'
+      - 'src/api/go.mod'
+      - 'src/api/go.sum'
+      - 'src/api/Dockerfile'
+      - 'src/api/.dockerignore'
+      - '.github/workflows/publish-api.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: publish-api
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: src/api/go.mod
+          cache-dependency-path: src/api/go.sum
+
+      - name: Test API
+        working-directory: src/api
+        run: go test ./...
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish
+        uses: docker/build-push-action@v7
+        with:
+          context: src/api
+          push: true
+          tags: |
+            ghcr.io/janssen-host/lab-controller:latest
+            ghcr.io/janssen-host/lab-controller:${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}

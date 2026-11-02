@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lab Controller</title>
+<style>
+:root { color-scheme: dark; font-family: monospace; background: #111; color: #ddd; }
+body { margin: 0; padding: 1rem; }
+main { max-width: 60rem; margin: auto; }
+h1 { font-size: 1.25rem; margin: 0 0 1rem; }
+h2 { font-size: 1rem; margin: 1.2rem 0 .6rem; }
+a { color: #8ecaff; overflow-wrap: anywhere; }
+button { font: inherit; color: inherit; background: #222; border: 1px solid #777; padding: .55rem .8rem; cursor: pointer; }
+nav { display: flex; gap: 1rem; align-items: center; margin-bottom: 1rem; }
+.tree { list-style: none; padding: 0; margin: 0; }
+.tree ul { list-style: none; padding-left: 1.2rem; border-left: 1px solid #555; margin: .3rem 0 .8rem .4rem; }
+.tree li { padding: .35rem 0; overflow-wrap: anywhere; }
+dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: .4rem 1rem; margin: 0; }
+dt { color: #aaa; } dd { margin: 0; overflow-wrap: anywhere; }
+.status { color: #aaa; } .error { color: #ff9090; white-space: pre-wrap; }
+pre { background: #191919; border: 1px solid #444; padding: .75rem; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+</style>
+</head>
+<body><main>
+<h1>Lab Controller</h1>
+<nav><a href="#/">Stacks</a><button id="refresh" type="button">Refresh</button><button id="action" type="button" hidden></button><span id="action-status" role="status"></span></nav>
+<div id="content" aria-live="polite">Loading…</div>
+</main>
+<script>
+'use strict';
+const content = document.getElementById('content');
+const action = document.getElementById('action');
+const actionStatus = document.getElementById('action-status');
+let socket = null;
+let generation = 0;
+function element(tag, text, className) {
+  const el = document.createElement(tag);
+  if (text != null) el.textContent = text;
+  if (className) el.className = className;
+  return el;
+}
+function link(text, hash) { const a = element('a', text); a.href = hash; return a; }
+function details(title, fields) {
+  const section = element('section'); section.append(element('h2', title));
+  const dl = element('dl');
+  for (const [label, value] of fields) {
+    dl.append(element('dt', label), element('dd', value == null || value === '' ? '—' : String(value)));
+  }
+  section.append(dl); return section;
+}
+async function get(path) {
+  const response = await fetch(path, {cache: 'no-store'});
+  if (!response.ok) throw new Error((await response.text()).trim() || `HTTP ${response.status}`);
+  return response.json();
+}
+function stackHash(id) { return '#/stack/' + encodeURIComponent(id); }
+function containerHash(id, name) { return stackHash(id) + '/container/' + encodeURIComponent(name); }
+async function render() {
+  const current = ++generation;
+  action.hidden = true;
+  actionStatus.textContent = '';
+  if (socket) { socket.close(); socket = null; }
+  content.replaceChildren(element('p', 'Loading…'));
+  try {
+    const parts = location.hash.slice(1).split('/').filter(Boolean).map(decodeURIComponent);
+    if (parts.length === 0) {
+      const [nodes, stacks] = await Promise.all([get('/nodes'), get('/stacks')]);
+      if (current !== generation) return;
+      content.replaceChildren(element('h2', 'Stacks by node'));
+      const tree = element('ul', null, 'tree');
+      const names = new Set([...nodes.filter(n => n.type === 'workload').map(n => n.name), ...stacks.map(s => s.node)]);
+      for (const name of [...names].sort()) {
+        const node = nodes.find(n => n.name === name && n.type === 'workload');
+        const li = element('li'); li.append(element('strong', name), element('span', node ? (node.reachable ? '  [reachable]' : '  [unreachable]') : '', 'status'));
+        const children = element('ul');
+        const group = stacks.filter(s => s.node === name);
+        for (const stack of group) { const item = element('li'); item.append(link(stack.name, stackHash(stack.id))); children.append(item); }
+        if (!group.length) children.append(element('li', 'No stacks', 'status'));
+        li.append(children); tree.append(li);
+      }
+      if (!names.size) tree.append(element('li', 'No workload nodes', 'status'));
+      content.append(tree); return;
+    }
+    if (parts[0] !== 'stack' || (parts.length !== 2 && !(parts.length === 4 && parts[2] === 'container'))) throw new Error('Page not found');
+    const id = parts[1];
+    const [stack, nodes] = await Promise.all([get('/stacks/' + encodeURIComponent(id)), get('/nodes')]);
+    if (current !== generation) return;
+    const node = nodes.find(n => n.name === stack.node && n.type === 'workload');
+    content.replaceChildren(details('Node', [['Name', stack.node], ['Host', stack.hostname], ['Status', node ? (node.reachable ? 'reachable' : 'unreachable') : 'unknown'], ['Checked', node?.checked_at], ['Error', node?.error]]));
+    content.append(details('Stack', [['Name', stack.name], ['Updated', stack.updated_at]]));
+    if (parts.length === 2) {
+      setAction('Update', '/stacks/' + encodeURIComponent(id) + '/update', current);
+      content.append(element('h2', 'Containers'));
+      const tree = element('ul', null, 'tree');
+      for (const container of stack.containers || []) {
+        const name = container.Name || container.ID;
+        if (!name) continue;
+        const item = element('li'); item.append(link(name, containerHash(id, name)), element('span', '  [' + (container.State || 'unknown') + ']', 'status')); tree.append(item);
+      }
+      if (!tree.childNodes.length) tree.append(element('li', 'No containers', 'status'));
+      content.append(tree); return;
+    }
+    const name = parts[3];
+    const container = (stack.containers || []).find(c => c.Name === name || c.ID === name);
+    if (!container) throw new Error('Container not found in stack');
+    setAction('Restart', '/stacks/' + encodeURIComponent(id) + '/containers/' + encodeURIComponent(name) + '/restart', current);
+    content.append(link('← ' + stack.name, stackHash(id)));
+    content.append(details('Container', [['Name', container.Name], ['ID', container.ID], ['Service', container.Service], ['State', container.State], ['Status', container.Status], ['Health', container.Health], ['Image', container.Image]]));
+    content.append(element('h2', 'Logs'));
+    const status = element('p', 'Connecting…', 'status'); const logs = element('pre');
+    content.append(status, logs);
+    const url = new URL('/stacks/' + encodeURIComponent(id) + '/logs', location.href);
+    url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    url.searchParams.set('container', name);
+    const stream = new WebSocket(url); socket = stream;
+    stream.onopen = () => { if (current === generation) status.textContent = 'Live'; };
+    let pending = '';
+    let completed = '';
+    stream.onmessage = event => {
+      if (current !== generation) return;
+      const lines = (pending + event.data).split('\n');
+      pending = lines.pop();
+      if (lines.length) completed = lines.reverse().join('\n') + '\n' + completed;
+      if (completed.length > 1000000) completed = completed.slice(0, 800000);
+      if (pending.length > 1000000) pending = pending.slice(-800000);
+      logs.textContent = (pending ? pending + '\n' : '') + completed;
+    };
+    stream.onerror = () => { if (current === generation) status.textContent = 'Log connection failed'; };
+    stream.onclose = event => { if (current === generation) status.textContent = event.wasClean ? 'Log stream closed' : 'Log connection lost. Refresh to retry.'; };
+  } catch (error) {
+    if (current === generation) content.replaceChildren(element('p', error.message || String(error), 'error'));
+  }
+}
+function setAction(label, path, current) {
+  action.textContent = label;
+  action.disabled = false;
+  action.hidden = false;
+  action.onclick = async () => {
+    action.disabled = true;
+    actionStatus.className = 'status';
+    actionStatus.textContent = label === 'Update' ? 'Updating…' : 'Restarting…';
+    try {
+      const response = await fetch(path, {method: 'POST'});
+      if (!response.ok) throw new Error((await response.text()).trim() || `HTTP ${response.status}`);
+      if (current === generation) render();
+    } catch (error) {
+      if (current !== generation) return;
+      actionStatus.className = 'error';
+      actionStatus.textContent = error.message || String(error);
+      action.disabled = false;
+    }
+  };
+}
+window.addEventListener('hashchange', render);
+document.getElementById('refresh').addEventListener('click', render);
+render();
+</script></body></html>

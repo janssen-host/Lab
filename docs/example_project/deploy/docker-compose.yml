@@ -1,0 +1,8 @@
+services:
+  web:
+    image: ${EXAMPLE_IMAGE:?EXAMPLE_IMAGE must be supplied by the deployment workflow}
+    restart: unless-stopped
+    environment:
+      GREETING: ${GREETING:-Hello from the lab example project}
+    ports:
+      - "${HOST_PORT:-8088}:8080"

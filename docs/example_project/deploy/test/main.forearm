@@ -1,0 +1,16 @@
+{
+    "name": "example-test",
+    "node": "wls-01",
+    "databases": [
+        {
+            "name": "example_test",
+            "user": "database_user",
+            "node": "dbs-01",
+            "backup_schedule": {
+                "frequency": "daily",
+                "time": "02:00",
+                "keep_last": 7
+            }
+        }
+    ]
+}

@@ -1,0 +1,66 @@
+{
+  "colours": {
+    "error": "1",
+    "warning": "3",
+    "success": "2",
+    "debug": "4"
+  },
+  "patterns": [
+    {
+      "colour": "error",
+      "regex": "^\\s*\\[\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?\\]\\s*\\[(?:ERR|FTL)\\]"
+    },
+    {
+      "colour": "warning",
+      "regex": "^\\s*\\[\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?\\]\\s*\\[WRN\\]"
+    },
+    {
+      "colour": "debug",
+      "regex": "^\\s*\\[\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?\\]\\s*\\[(?:DBG|VRB)\\]"
+    },
+    {
+      "colour": "error",
+      "regex": "^\\s*\\[(?i:Error|Fatal)\\]"
+    },
+    {
+      "colour": "warning",
+      "regex": "^\\s*\\[(?i:Warn|Warning)\\]"
+    },
+    {
+      "colour": "debug",
+      "regex": "^\\s*\\[(?i:Debug|Trace)\\]"
+    },
+    {
+      "colour": "error",
+      "regex": "\\b\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2},\\d{3}::(?:ERROR|CRITICAL)\\b"
+    },
+    {
+      "colour": "warning",
+      "regex": "\\b\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2},\\d{3}::WARNING\\b"
+    },
+    {
+      "colour": "error",
+      "regex": "\\b\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})\\s+ERR\\b"
+    },
+    {
+      "colour": "error",
+      "regex": "\"level\"\\s*:\\s*\"(?i:error)\""
+    },
+    {
+      "colour": "warning",
+      "regex": "\\b\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})\\s+WRN\\b"
+    },
+    {
+      "colour": "warning",
+      "regex": "\"level\"\\s*:\\s*\"warn\""
+    },
+    {
+      "colour": "success",
+      "regex": "certificate obtained successfully"
+    },
+    {
+      "colour": "warning",
+      "regex": "404"
+    }
+  ]
+}

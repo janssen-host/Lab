@@ -1,0 +1,147 @@
+name: Example project pipeline
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: example-project-deployments
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: src/go.mod
+          cache-dependency-path: src/go.mod
+
+      - name: Test example application
+        working-directory: src
+        run: go test ./...
+
+      - name: Validate example Compose file
+        env:
+          EXAMPLE_IMAGE: example.invalid/lab/example-project:test
+        run: docker compose -f deploy/docker-compose.yml config --quiet
+
+      - name: Validate deployment examples
+        run: |
+          jq -e '.name and .node and (.databases | length > 0)' deploy/test/main.forearm >/dev/null
+          jq -e '.name and .node and (.databases | length > 0)' deploy/prod/main.forearm >/dev/null
+          jq -e 'type == "object"' deploy/test/env.json >/dev/null
+          jq -e 'type == "object"' deploy/prod/env.json >/dev/null
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish example image
+        uses: docker/build-push-action@v7
+        with:
+          context: src
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/example-project:${{ github.sha }}
+            ghcr.io/${{ github.repository_owner }}/example-project:latest
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+
+  deploy-test:
+    needs: build
+    runs-on: self-hosted
+    environment: test
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Deploy test environment
+        env:
+          API_URL: ${{ vars.LAB_CONTROLLER_API_URL }}
+          IMAGE_REF: ghcr.io/${{ github.repository_owner }}/example-project:${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          environment="test"
+          case "$environment" in
+            test|prod) ;;
+            *) echo "environment must be test or prod" >&2; exit 2 ;;
+          esac
+
+          : "${API_URL:?Set the LAB_CONTROLLER_API_URL organisation variable}"
+          : "${IMAGE_REF:?The workflow must provide the image reference}"
+
+          deploy_dir="deploy/${environment}"
+          forearm_file="$deploy_dir/main.forearm"
+          env_file="${RUNNER_TEMP:-/tmp}/example-project-${environment}.env.json"
+
+          jq --arg image "$IMAGE_REF" '. + {"EXAMPLE_IMAGE": $image}' \
+            "$deploy_dir/env.json" > "$env_file"
+
+          curl --fail-with-body --show-error --silent \
+            --request POST "${API_URL%/}/deploy" \
+            --form "forearm=@${forearm_file};type=application/json" \
+            --form "compose=@deploy/docker-compose.yml;type=application/yaml" \
+            --form "env=@${env_file};type=application/json"
+          printf '\n'
+
+  deploy-prod:
+    needs: deploy-test
+    runs-on: self-hosted
+    environment: prod
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Deploy production environment
+        env:
+          API_URL: ${{ vars.LAB_CONTROLLER_API_URL }}
+          IMAGE_REF: ghcr.io/${{ github.repository_owner }}/example-project:${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          environment="prod"
+          case "$environment" in
+            test|prod) ;;
+            *) echo "environment must be test or prod" >&2; exit 2 ;;
+          esac
+
+          : "${API_URL:?Set the LAB_CONTROLLER_API_URL organisation variable}"
+          : "${IMAGE_REF:?The workflow must provide the image reference}"
+
+          deploy_dir="deploy/${environment}"
+          forearm_file="$deploy_dir/main.forearm"
+          env_file="${RUNNER_TEMP:-/tmp}/example-project-${environment}.env.json"
+
+          jq --arg image "$IMAGE_REF" '. + {"EXAMPLE_IMAGE": $image}' \
+            "$deploy_dir/env.json" > "$env_file"
+
+          curl --fail-with-body --show-error --silent \
+            --request POST "${API_URL%/}/deploy" \
+            --form "forearm=@${forearm_file};type=application/json" \
+            --form "compose=@deploy/docker-compose.yml;type=application/yaml" \
+            --form "env=@${env_file};type=application/json"
+          printf '\n'

@@ -1,0 +1,31 @@
+# Local environment files and secrets
+.env
+.env.*
+
+# Local databases and runtime files
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite3-wal
+*.sqlite3-shm
+*.db
+*.db-wal
+*.db-shm
+*.log
+
+# Go build and test output
+/bin/
+/dist/
+*.test
+coverage.out
+
+# Editor and operating system files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Local lab configuration and HTTP requests
+/src/api/compose/docker-compose.yml
+/src/http/

@@ -1,0 +1,22 @@
+services:
+  api:
+    image: ghcr.io/janssen-host/lab-controller:latest
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "8080:8080"
+    volumes:
+      - api_data:/app/data
+      - api_backups:/app/backups
+      - ./:/app/config:ro
+      - ../../.ssh:/app/ssh:ro
+
+volumes:
+  api_data:
+  api_backups:
+    driver: local
+    driver_opts:
+      type: nfs
+      o: "addr=${BACKUP_NFS_SERVER:?BACKUP_NFS_SERVER must be set},rw,nfsvers=3"
+      device: ":${BACKUP_NFS_EXPORT:?BACKUP_NFS_EXPORT must be set}"
