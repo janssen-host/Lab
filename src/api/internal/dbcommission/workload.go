@@ -54,6 +54,10 @@ if ! docker compose -p "$project" config -q >/dev/null 2>&1; then
   if ! rollback; then exit 42; fi
   exit 41
 fi
+if ! docker compose -p "$project" pull >/dev/null 2>&1; then
+  if ! rollback; then exit 42; fi
+  exit 41
+fi
 started=1
 if ! docker compose -p "$project" up -d --wait --wait-timeout 60 --remove-orphans >/dev/null 2>&1; then
   if ! rollback; then exit 42; fi
