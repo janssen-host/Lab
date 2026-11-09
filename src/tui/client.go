@@ -211,6 +211,25 @@ func (c *apiClient) updateStack(ctx context.Context, stackID string) error {
 	return nil
 }
 
+func (c *apiClient) deleteStack(ctx context.Context, stackID string) error {
+	u := c.endpoint("/stacks/" + url.PathEscape(stackID))
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, u.String(), nil)
+	if err != nil {
+		return err
+	}
+	client := *c.http
+	client.Timeout = 180 * time.Second
+	res, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("API returned %s", res.Status)
+	}
+	return nil
+}
+
 func (c *apiClient) trustStackHostKey(ctx context.Context, stackID string) (string, error) {
 	u := c.endpoint("/stacks/" + url.PathEscape(stackID) + "/trust-host-key")
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), nil)

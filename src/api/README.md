@@ -51,3 +51,5 @@ Backups and their job statuses appear in `GET /databases/{id}` and `/jobs`. The 
 To update a recorded stack, send `POST /stacks/{id}/update`. The controller pulls configured images, runs Compose up with readiness checks and removes orphan containers, then prunes dangling images on the host. Volumes are retained. Updates use the existing Compose configuration and cannot refresh immutable image tags. A failed update can leave the stack partially updated.
 
 `POST /databases/{id}/backups/{backup}/restore` starts a restore job for a completed backup belonging to that database. Check the returned `job_id` through `GET /jobs/{id}`. The restore disconnects clients, replaces the database using its existing name and user, and restores the dump. A failed restore can leave a partial database.
+
+`DELETE /stacks/{id}` removes the Compose project, its containers, non-external volumes and images, and its host directory. Images used by other containers may remain. The stack record and its database associations are removed; separately managed databases and backups are retained. A failed host cleanup can leave resources partially removed.

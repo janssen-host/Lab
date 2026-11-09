@@ -51,6 +51,7 @@ type stackUpdatedMsg struct {
 	generation int
 	err        error
 }
+type stackDeletedMsg struct{ err error }
 type hostKeyTrustedMsg struct {
 	generation  int
 	fingerprint string
@@ -69,6 +70,8 @@ type model struct {
 	backupSelection            bool
 	backupIndex                int
 	restoreConfirm             int
+	deleteConfirm              int
+	deleting                   bool
 	searching                  bool
 	searchQuery                string
 	searchIndex                int
@@ -270,7 +273,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.clampScroll()
 		m.clampHorizontal()
 	case tea.MouseMsg:
-		if m.searching || m.restoreConfirm > 0 {
+		if m.searching || m.restoreConfirm > 0 || m.deleteConfirm > 0 {
 			if m.searching {
 				switch v.Button {
 				case tea.MouseButtonWheelUp:
@@ -364,6 +367,23 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
+		if m.deleteConfirm > 0 {
+			switch v.String() {
+			case "esc", "n":
+				m.deleteConfirm = 0
+			case "y":
+				if m.deleteConfirm == 1 {
+					m.deleteConfirm = 2
+				} else {
+					st := m.stacks[m.stackIndex]
+					m.deleteConfirm = 0
+					m.deleting = true
+					m.status = "Deleting " + st.Name + "..."
+					return m, func() tea.Msg { return stackDeletedMsg{err: m.api.deleteStack(context.Background(), st.ID)} }
+				}
+			}
+			return m, nil
+		}
 		if m.backupSelection {
 			switch v.String() {
 			case "esc":
@@ -424,6 +444,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					fingerprint, err := m.api.trustStackHostKey(context.Background(), stackID)
 					return hostKeyTrustedMsg{generation: generation, fingerprint: fingerprint, err: err}
 				}
+			}
+		case "D":
+			if !m.deleting && m.stackIndex < len(m.stacks) {
+				m.deleteConfirm = 1
 			}
 		case "U":
 			if !m.updating && m.stackIndex < len(m.stacks) {
@@ -597,6 +621,20 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.status = "Trusted SSH key " + v.fingerprint + "; press r to reconnect"
 		return m, nil
+	case stackDeletedMsg:
+		m.deleting = false
+		if v.err != nil {
+			m.status = "Could not delete stack: " + v.err.Error()
+			return m, nil
+		}
+		m.stopStream()
+		m.generation++
+		m.containers = nil
+		m.databases = nil
+		m.logs = nil
+		m.activeDatabase = false
+		m.status = "Stack deleted"
+		return m, m.loadStacks()
 	case stackUpdatedMsg:
 		m.updating = false
 		if v.generation != m.generation {
@@ -1032,12 +1070,20 @@ func (m *model) View() string {
 		rightContent = append(rightContent, lines...)
 	}
 	content := lipgloss.JoinHorizontal(lipgloss.Top, box("Stacks", sidebar, left, boxHeight), " ", box(boxTitle, rightContent, right, boxHeight))
-	help := "↑/↓ stacks  s search  ←/→ tabs  h/l logs  R restart  U update  T trust SSH  m log selection mode  r refresh  q quit"
+	help := "↑/↓ stacks  s search  ←/→ tabs  h/l logs  R restart  U update  D delete stack  T trust SSH  m log selection mode  r refresh  q quit"
 	if m.activeDatabase {
-		help = "↑/↓ stacks  s search  ←/→ tabs  c copy URI  b backup  S select backup  U update  T trust SSH  m log selection mode  r refresh  q quit"
+		help = "↑/↓ stacks  s search  ←/→ tabs  c copy URI  b backup  S select backup  U update  D delete stack  T trust SSH  m log selection mode  r refresh  q quit"
 	}
 	footer := truncate(m.status+"  |  "+help, m.width)
 	view := lipgloss.NewStyle().Bold(true).Render("LAB CONTROLLER") + "\n" + content + "\n" + footer
+	if m.deleteConfirm > 0 {
+		st := m.stacks[m.stackIndex]
+		prompt := "Delete stack " + safeText(st.Name) + " on " + safeText(st.Node) + "?"
+		if m.deleteConfirm == 2 {
+			prompt = "FINAL: Delete stack " + safeText(st.Name) + "?"
+		}
+		return m.modal(view, prompt+"\nContainers, images and volumes will be removed.\n\nPress y to confirm; n or Esc to cancel")
+	}
 	if m.restoreConfirm > 0 {
 		return m.modal(view, m.restoreModal())
 	}

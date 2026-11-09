@@ -284,3 +284,43 @@ func TestUpdateStackKey(t *testing.T) {
 		t.Fatalf("update failed: %#v", msg)
 	}
 }
+
+func TestDeleteStackConfirmations(t *testing.T) {
+	called := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete || r.URL.Path != "/stacks/s1" {
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		called = true
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	api, err := newAPI(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := &model{api: api, stacks: []stack{{ID: "s1", Name: "app"}}}
+	key := func(s string) tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)} }
+	_, cmd := m.Update(key("D"))
+	if cmd != nil || m.deleteConfirm != 1 {
+		t.Fatal("first confirmation missing")
+	}
+	_, cmd = m.Update(key("y"))
+	if cmd != nil || m.deleteConfirm != 2 || called {
+		t.Fatal("second confirmation missing")
+	}
+	m.Update(key("n"))
+	if m.deleteConfirm != 0 || called {
+		t.Fatal("cancel failed")
+	}
+	m.Update(key("D"))
+	m.Update(key("y"))
+	_, cmd = m.Update(key("y"))
+	if cmd == nil {
+		t.Fatal("delete not started")
+	}
+	msg := cmd()
+	if result, ok := msg.(stackDeletedMsg); !ok || result.err != nil || !called {
+		t.Fatalf("delete failed: %#v", msg)
+	}
+}

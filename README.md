@@ -107,7 +107,7 @@ go run . -api http://<controller-host>:8080
 ```
 
 Use the arrow keys to navigate stacks and container or database tabs. `R`
-restarts a container, `U` updates a stack, `T` trusts a replacement SSH host
+restarts a container, `U` updates a stack, `D` deletes a stack after two confirmations, `T` trusts a replacement SSH host
 key, and `r` refreshes. See the [TUI guide](src/tui/README.md) for all controls.
 
 ## Development

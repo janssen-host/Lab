@@ -253,3 +253,52 @@ func (s *Service) UpdateStack(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// DeleteStack removes the host project and its controller records.
+func (s *Service) DeleteStack(w http.ResponseWriter, r *http.Request) {
+	s.stackMu.Lock()
+	defer s.stackMu.Unlock()
+	var st stackRecord
+	var port int
+	err := s.db.QueryRowContext(r.Context(), `SELECT s.name,s.node,n.hostname,n.ssh_port FROM stacks s JOIN nodes n ON n.name=s.node WHERE s.id=? AND n.type='workload' AND n.configured=1`, r.PathValue("id")).Scan(&st.Name, &st.Node, &st.Hostname, &port)
+	if errors.Is(err, sql.ErrNoRows) {
+		http.Error(w, "stack not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	if !stackName.MatchString(st.Name) {
+		http.Error(w, "invalid stack name", http.StatusInternalServerError)
+		return
+	}
+	if err = s.remote.DeleteStack(r.Context(), config.Node{Name: st.Node, Hostname: st.Hostname, SSHPort: port}, st.Name); err != nil {
+		http.Error(w, "could not delete stack: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	tx, err := s.db.BeginTx(r.Context(), nil)
+	if err != nil {
+		http.Error(w, "database error", 500)
+		return
+	}
+	defer tx.Rollback()
+	for _, q := range []struct {
+		sql  string
+		args []any
+	}{
+		{`DELETE FROM stack_services WHERE stack_id=?`, []any{r.PathValue("id")}},
+		{`DELETE FROM stack_databases WHERE stack_node=? AND stack_name=?`, []any{st.Node, st.Name}},
+		{`DELETE FROM stacks WHERE id=?`, []any{r.PathValue("id")}},
+	} {
+		if _, err = tx.ExecContext(r.Context(), q.sql, q.args...); err != nil {
+			http.Error(w, "database error", 500)
+			return
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		http.Error(w, "database error", 500)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}

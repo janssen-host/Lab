@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -27,6 +28,8 @@ type remoteStub struct {
 	lastDotenv     string
 	restarted      string
 	updated        string
+	deleted        string
+	deleteErr      error
 }
 
 func (r *remoteStub) DeployStack(_ context.Context, node config.Node, name string, compose, dotenv []byte) error {
@@ -49,6 +52,11 @@ func (r *remoteStub) RestartContainer(_ context.Context, node config.Node, stack
 func (r *remoteStub) StreamLogs(context.Context, config.Node, string, string) (io.ReadCloser, error) {
 	return io.NopCloser(strings.NewReader("first line\nsecond line\n")), nil
 }
+func (r *remoteStub) DeleteStack(_ context.Context, node config.Node, stack string) error {
+	r.deleted = node.Name + "/" + stack
+	return r.deleteErr
+}
+
 func (r *remoteStub) UpdateStack(_ context.Context, node config.Node, stack string) error {
 	r.updated = node.Name + "/" + stack
 	return nil
@@ -328,5 +336,36 @@ func TestUpdateStack(t *testing.T) {
 	}
 	if remote.updated != "worker/app" {
 		t.Fatalf("wrong update target: %q", remote.updated)
+	}
+}
+
+func TestDeleteStack(t *testing.T) {
+	s, remote := setup(t)
+	_, err := s.db.Exec(`INSERT INTO stacks VALUES ('s1','worker','app','now','now'); INSERT INTO stack_services VALUES ('s1','web',1); INSERT INTO stack_databases VALUES ('worker','app','db','data')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodDelete, "/", nil)
+	req.SetPathValue("id", "s1")
+	remote.deleteErr = fmt.Errorf("host unavailable")
+	w := httptest.NewRecorder()
+	s.DeleteStack(w, req)
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("failure: %d", w.Code)
+	}
+	var count int
+	if err := s.db.QueryRow(`SELECT count(*) FROM stacks WHERE id='s1'`).Scan(&count); err != nil || count != 1 {
+		t.Fatal("stack record lost on failure")
+	}
+	remote.deleteErr = nil
+	w = httptest.NewRecorder()
+	s.DeleteStack(w, req)
+	if w.Code != http.StatusNoContent || remote.deleted != "worker/app" {
+		t.Fatalf("delete: %d %s", w.Code, remote.deleted)
+	}
+	for _, table := range []string{"stacks", "stack_services", "stack_databases"} {
+		if err := s.db.QueryRow(`SELECT count(*) FROM ` + table).Scan(&count); err != nil || count != 0 {
+			t.Fatalf("%s: %d %v", table, count, err)
+		}
 	}
 }

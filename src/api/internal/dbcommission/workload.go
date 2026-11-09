@@ -156,3 +156,18 @@ docker compose -p "$project" config --services`
 	}
 	return strings.Fields(output), nil
 }
+
+// DeleteStack removes the Compose project and its local configuration.
+func (r SSHRemote) DeleteStack(ctx context.Context, node config.Node, name string) error {
+	const script = `set -eu
+IFS= read -r name
+IFS= read -r project
+path="$HOME/stacks/$name"
+[ ! -L "$path" ] || exit 1
+cd "$path"
+docker compose -p "$project" down --remove-orphans --volumes --rmi all
+cd "$HOME/stacks"
+rm -rf -- "$name"`
+	_, err := r.run(ctx, node, script, name+"\n"+projectName(name)+"\n")
+	return err
+}

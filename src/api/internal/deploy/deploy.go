@@ -55,6 +55,7 @@ type SQLRemote interface {
 	StackServices(context.Context, config.Node, string) ([]string, error)
 	RestartContainer(context.Context, config.Node, string, string) error
 	UpdateStack(context.Context, config.Node, string) error
+	DeleteStack(context.Context, config.Node, string) error
 	TrustHostKey(context.Context, config.Node) (string, error)
 	StreamLogs(context.Context, config.Node, string, string) (io.ReadCloser, error)
 	Dump(context.Context, config.Node, string, string, io.Writer) error

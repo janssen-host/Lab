@@ -22,6 +22,7 @@ func routes(db *sql.DB, deployments *deploy.Service) http.Handler {
 	mux.HandleFunc("POST /deploy", deployments.Deploy)
 	mux.HandleFunc("GET /stacks", deployments.ListStacks)
 	mux.HandleFunc("GET /stacks/{id}", deployments.StackDetails)
+	mux.HandleFunc("DELETE /stacks/{id}", deployments.DeleteStack)
 	mux.HandleFunc("GET /stacks/{id}/logs", deployments.StackLogs)
 	mux.HandleFunc("POST /stacks/{id}/update", deployments.UpdateStack)
 	mux.HandleFunc("POST /stacks/{id}/trust-host-key", deployments.TrustStackHostKey)
